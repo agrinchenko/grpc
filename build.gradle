@@ -1,0 +1,74 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.1'
+    }
+}
+
+plugins {
+    id "java"
+    id "com.google.protobuf" version "0.8.1"
+    id "application"
+}
+
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+apply plugin: 'java'
+apply plugin: 'application'
+mainClassName = 'org.example.server.GrpcServer'
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:3.2.0"
+    }
+    plugins {
+        grpc {
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.3.0'
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
+    generatedFilesBaseDir = "$projectDir/src/main/java/generated"
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile 'io.grpc:grpc-all:1.3.0'
+    compile 'io.grpc:grpc-services:1.3.0'
+    compile 'com.fazecast:jSerialComm:2.11.0'
+    compile 'org.apache.groovy:groovy-ant:4.0.22'
+    compile 'com.influxdb:influxdb-client-java:6.12.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.10.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+jar {
+    //Building as Far Jar for now
+    from configurations.compile.collect {zipTree it}
+    manifest {
+        attributes(
+                'Main-Class': 'org.example.server.GrpcServer'
+        )
+    }
+}
+
+// Copying all dependency libs into the buildDir so that they
+// can be easily copied into Docker Image
+tasks.register('copyToLib', Copy) {
+    into "$buildDir/output/lib"
+    from configurations.runtime
+}
