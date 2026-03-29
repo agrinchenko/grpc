@@ -7,16 +7,16 @@ import com.fazecast.jSerialComm.SerialPortInvalidPortException;
 import org.example.annotations.Item;
 import org.example.annotations.Parameter;
 
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.BlockingQueue;
 
 @Item(name = "GeigerConnector")
 public class RadiationSupplier {
     private SerialPort _comPort;
     private final AtomicBoolean _running = new AtomicBoolean(false);
     private final AtomicBoolean _startEmitting = new AtomicBoolean(false);
-    private final Queue<Short> _queue = new ConcurrentLinkedQueue<>();
+    private BlockingQueue<Short> _queue;
 
     @Parameter(name = "model", description = "Counter model")
     private String _model = "GCM-500";
@@ -44,6 +44,7 @@ public class RadiationSupplier {
 
     public boolean initialize() {
         try {
+            _queue = new ArrayBlockingQueue<>(_maxQueueSize);
             _comPort = SerialPort.getCommPort(_commPort);
             _comPort.setBaudRate(_baudRate);
             _comPort.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, _readInterval, _writeInterval);
@@ -70,11 +71,11 @@ public class RadiationSupplier {
                     int numRead = _comPort.readBytes(newData, newData.length);
                     if (numRead == 2) {
                         short count = getShortValue(newData);
-                        if (_queue.size() > _maxQueueSize) {
-                            _queue.clear();
-                        }
                         if (_startEmitting.get()) {
-                            _queue.add(count);
+                            if (!_queue.offer(count)) {
+                                _queue.poll();
+                                _queue.offer(count);
+                            }
                         }
                     System.out.printf("Count is %s CPM Queue size after add is %d %n", count, _queue.size());
                     } else {
@@ -104,7 +105,7 @@ public class RadiationSupplier {
         return (short)((twoBytes[0] << 8) | (twoBytes[1] & 0xFF));
     }
 
-    public Queue<Short> getQueue() {
+    public BlockingQueue<Short> getQueue() {
         return _queue;
     }
 

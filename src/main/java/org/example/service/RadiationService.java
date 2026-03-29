@@ -11,150 +11,43 @@ import org.example.supplier.RadiationSupplier;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Queue;
-import java.util.Random;
-
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
+import java.util.concurrent.BlockingQueue;
 
 public class RadiationService extends RadiationProviderGrpc.RadiationProviderImplBase{
     private RadiationSupplier _radiationSupplier;
-    private Queue<Short> _cpmQueue;
+    private BlockingQueue<Short> _cpmQueue;
 
     @Override
     public void serverSideStreamingCpmCounts(User.Empty request, StreamObserver<User.CpmCount> responseObserver) {
+        ServerCallStreamObserver<User.CpmCount> serverCallStreamObserver =
+                (ServerCallStreamObserver<User.CpmCount>) responseObserver;
 
-                ServerCallStreamObserver<User.CpmCount> serverCallStreamObserver =
-                        (ServerCallStreamObserver<User.CpmCount>) responseObserver;
+        serverCallStreamObserver.setOnCancelHandler(() -> {
+            System.out.println("Client disconnected.");
+            stopDataEmit();
+        });
+        serverCallStreamObserver.setOnReadyHandler(() -> System.out.println("Client is ready."));
 
+        startDataEmit();
+        while (true) {
+            wait(1000);
 
-                // Add a cancellation handler to detect client disconnects
-                serverCallStreamObserver.setOnCancelHandler(() -> {
-                    System.out.println("Client disconnected.");
-                    stopDataEmit();
-                });
-
-                ((ServerCallStreamObserver<User.CpmCount>) responseObserver).setOnReadyHandler(() -> {
-                    System.out.println("Client is ready.");
-                });
-
-                ((ServerCallStreamObserver<User.CpmCount>) responseObserver).setOnCancelHandler(() -> {
-                    System.out.println("Client is cancelled.");
-                });
-
-//        serverCallStreamObserver.onError(new Throwable("MSG"));
-
-                serverCallStreamObserver.setOnCancelHandler(() -> {
-                    System.out.println("Client disconnected.");
-                    stopDataEmit();
-                });
-
-                serverCallStreamObserver.setOnReadyHandler(() -> {
-                    System.out.println("Client is ready.");
-                });
-
-        Context.CancellationListener cl = new Context.CancellationListener() {
-            @Override
-            public void cancelled(Context context) {
-                System.out.println("KKKKKKKKKKKKKK");
+            if (Context.current().isCancelled() || serverCallStreamObserver.isCancelled()) {
+                stopDataEmit();
+                serverCallStreamObserver.onCompleted();
+                break;
             }
-        };
-                Context.current().addListener(cl, directExecutor());
 
-                Random random = new Random();
-                while (true) {
-                    wait(1000);
-                    if (Context.current().isCancelled()) {
-                        System.out.println("CANCELLED");
-                        serverCallStreamObserver.onCompleted();
-                        break;
-                    }
+            Short cpm = _cpmQueue.poll();
+            if (cpm == null) {
+                continue;
+            }
 
-                    if (serverCallStreamObserver.isCancelled()) {
-                        System.out.println("cancelled");
-                        serverCallStreamObserver.onCompleted();
-                        break;
-                    }
-
-                    int rand = random.nextInt();
-                    User.CpmCount radCount = User.CpmCount.newBuilder()
-                            .setCount(rand)
-                            .build();
-                    responseObserver.onNext(radCount);
-                }
-
-//        startDataEmit();
-//        int breakCount = 0;
-//        while (true) {
-//
-//            if (Context.current().isCancelled()) {
-//                System.out.println("CANCELLED");
-//                serverCallStreamObserver.onCompleted();
-//                break;
-//            }
-//
-//            if (serverCallStreamObserver.isCancelled()) {
-//                System.out.println("cancelled");
-//                serverCallStreamObserver.onCompleted();
-//                break;
-//            }
-//
-//            if (!_cpmQueue.isEmpty()) {
-//                wait(5000);
-//                Short cpm = _cpmQueue.poll();
-//                System.out.printf("Queue size after poll is %d %n", _cpmQueue.size());
-//                if (cpm != null && cpm > 0) {
-//                    User.CpmCount radCount = User.CpmCount.newBuilder()
-//                            .setCount(cpm)
-//                            .build();
-//                    responseObserver.onNext(radCount);
-//                }
-//            }
-//            else {
-//                System.out.println("Queue is empty, waiting 10 seconds...");
-//                wait(15000);
-//                System.out.println(" 10 seconds is over, incrementing break count");
-//                breakCount++;
-//                System.out.printf("Incrementing break count: %d %n", breakCount);
-//            }
-//        }
-//                responseObserver.onCompleted();
-//            }
-
-//        startDataEmit();
-//        int breakCount = 0;
-//        while (true) {
-//
-//            if (Context.current().isCancelled()) {
-//                System.out.println("CANCELLED");
-//                serverCallStreamObserver.onCompleted();
-//                break;
-//            }
-//
-//            if (serverCallStreamObserver.isCancelled()) {
-//                System.out.println("cancelled");
-//                serverCallStreamObserver.onCompleted();
-//                break;
-//            }
-//
-//            if (!_cpmQueue.isEmpty()) {
-//                wait(5000);
-//                Short cpm = _cpmQueue.poll();
-//                System.out.printf("Queue size after poll is %d %n", _cpmQueue.size());
-//                if (cpm != null && cpm > 0) {
-//                    User.CpmCount radCount = User.CpmCount.newBuilder()
-//                            .setCount(cpm)
-//                            .build();
-//                    responseObserver.onNext(radCount);
-//                }
-//            }
-//            else {
-//                System.out.println("Queue is empty, waiting 10 seconds...");
-//                wait(15000);
-//                System.out.println(" 10 seconds is over, incrementing break count");
-//                breakCount++;
-//                System.out.printf("Incrementing break count: %d %n", breakCount);
-//            }
-//        }
+            User.CpmCount radCount = User.CpmCount.newBuilder()
+                    .setCount(cpm)
+                    .build();
+            responseObserver.onNext(radCount);
+        }
         responseObserver.onCompleted();
     }
 
@@ -176,7 +69,6 @@ public class RadiationService extends RadiationProviderGrpc.RadiationProviderImp
 
     public void initialize(String configPath) {
         _radiationSupplier = new RadiationSupplier();
-        _cpmQueue = _radiationSupplier.getQueue();
 
         ConfigurationHelper.applyConfigurationByPath(new ArrayList<>(Collections.singletonList(_radiationSupplier)), configPath);
         boolean initOK = _radiationSupplier.initialize();
@@ -184,6 +76,7 @@ public class RadiationService extends RadiationProviderGrpc.RadiationProviderImp
             System.out.println("RadiationService failed to initialize");
             System.exit(1);
         }
+        _cpmQueue = _radiationSupplier.getQueue();
     }
 
 

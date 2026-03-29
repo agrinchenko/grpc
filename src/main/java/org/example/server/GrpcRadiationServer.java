@@ -7,8 +7,7 @@ import org.example.service.RadiationService;
 
 import java.io.IOException;
 
-/*
-* To run from the CLI:  java -jar ./build/libs/basicGrpc-1.0-SNAPSHOT.jar
+/* * To run from the CLI:  java -jar ./build/libs/basicGrpc-1.0-SNAPSHOT.jar
 * */
 
 public class GrpcRadiationServer {
